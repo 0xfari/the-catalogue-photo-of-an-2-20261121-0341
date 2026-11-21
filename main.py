@@ -1,183 +1,159 @@
 #!/usr/bin/env python3
 """SOLARFLASH SF-1 — catalogue photograph of an impossible gadget.
 
-A solar-powered torch that only works in daylight. Drawn entirely with
-PIL: studio backdrop, soft shadow, the torch (gunmetal body, solar panel,
-silver bezel, glowing lens), a beam spilling out of frame to the right,
-and exactly one accessory — the sunglasses you need to use it.
-Deterministic, no network, no randomness.
+A solar-powered torch that only works in daylight. Drawn as a clean studio
+catalogue shot: gunmetal torch, glowing lens, warm beam spilling out of
+frame, navy solar panel on its back, red power button, and one accessory —
+the sunglasses you need to use it.
+
+Deterministic, no network, no randomness. Writes entry.png to
+MAKEFUN_OUTPUT_DIR (or /output).
 """
+
 import os
+
 from PIL import Image, ImageDraw, ImageFilter, ImageFont
 
-W, H = 1024, 1024
-
+W = H = 1024
 FONT_DIR = "/usr/share/fonts/truetype/dejavu"
-F_BOLD = ImageFont.truetype(f"{FONT_DIR}/DejaVuSans-Bold.ttf", 54)
-F_SPEC = ImageFont.truetype(f"{FONT_DIR}/DejaVuSans.ttf", 30)
-F_SMALL = ImageFont.truetype(f"{FONT_DIR}/DejaVuSans.ttf", 24)
-F_BODY = ImageFont.truetype(f"{FONT_DIR}/DejaVuSans-Bold.ttf", 22)
-F_TAG = ImageFont.truetype(f"{FONT_DIR}/DejaVuSans-Bold.ttf", 20)
+
+
+def font(name, size):
+    return ImageFont.truetype(os.path.join(FONT_DIR, name), size)
 
 
 def lerp(a, b, t):
     return tuple(int(a[i] + (b[i] - a[i]) * t) for i in range(3))
 
 
-def backdrop():
-    """Soft studio gradient: warm light grey at top to near-white floor."""
-    img = Image.new("RGB", (W, H))
-    px = img.load()
-    for y in range(H):
-        t = y / (H - 1)
-        c = lerp((232, 231, 226), (250, 249, 246), t)
-        for x in range(W):
-            px[x, y] = c
-    # faint radial light behind the product
-    glow = Image.new("L", (W, H), 0)
-    gd = ImageDraw.Draw(glow)
-    gd.ellipse([180, 180, 900, 780], fill=26)
-    glow = glow.filter(ImageFilter.GaussianBlur(140))
-    img = Image.composite(Image.new("RGB", (W, H), (255, 255, 252)), img, glow)
+def vertical_gradient(size, top, bottom):
+    img = Image.new("RGB", size)
+    d = ImageDraw.Draw(img)
+    w, h = size
+    for y in range(h):
+        d.line([(0, y), (w, y)], fill=lerp(top, bottom, y / max(h - 1, 1)))
     return img
+
+
+def soft_ellipse(layer, box, fill, blur):
+    tmp = Image.new("RGBA", layer.size, (0, 0, 0, 0))
+    ImageDraw.Draw(tmp).ellipse(box, fill=fill)
+    tmp = tmp.filter(ImageFilter.GaussianBlur(blur))
+    layer.alpha_composite(tmp)
 
 
 def rounded(draw, box, radius, **kw):
     draw.rounded_rectangle(box, radius=radius, **kw)
 
 
-def draw_shadow(img):
-    """Soft contact shadow under torch and sunglasses."""
-    layer = Image.new("RGBA", (W, H), (0, 0, 0, 0))
-    d = ImageDraw.Draw(layer)
-    d.ellipse([205, 505, 845, 545], fill=(60, 58, 52, 110))
-    d.ellipse([295, 700, 505, 728], fill=(60, 58, 52, 90))
-    layer = layer.filter(ImageFilter.GaussianBlur(10))
-    img.alpha_composite(layer)
-
-
-def draw_beam(img):
-    """Warm beam cone from the lens, fading to the right edge."""
-    layer = Image.new("RGBA", (W, H), (0, 0, 0, 0))
-    d = ImageDraw.Draw(layer)
-    x0, y0 = 838, 436  # lens centre
-    # cone widening to the right edge
-    steps = 90
-    for i in range(steps):
-        x = x0 + (W - x0) * i / steps
-        half = 10 + (115 - 10) * i / steps
-        alpha = int(200 * (1 - i / steps) ** 1.2)
-        d.rectangle([x, y0 - half, x + 3, y0 + half],
-                    fill=(255, 206, 100, alpha))
-    # hot glow at the lens
-    for r in range(52, 0, -1):
-        a = int(200 * (1 - r / 52))
-        d.ellipse([x0 - r, y0 - r, x0 + r, y0 + r],
-                  fill=(255, 230, 150, a))
-    layer = layer.filter(ImageFilter.GaussianBlur(3))
-    img.alpha_composite(layer)
-
-
-def draw_torch(img):
-    d = ImageDraw.Draw(img, "RGBA")
-    # body: gunmetal cylinder with top highlight and bottom shade
-    body = [200, 380, 760, 492]
-    rounded(d, body, 55, fill=(52, 56, 62, 255))
-    rounded(d, [200, 380, 760, 408], 55, fill=(88, 94, 102, 255))
-    rounded(d, [200, 380, 760, 392], 55, fill=(120, 126, 134, 255))
-    rounded(d, [200, 470, 760, 492], 55, fill=(30, 32, 36, 255))
-    # tail cap ring
-    rounded(d, [200, 380, 232, 492], 28, fill=(38, 41, 46, 255))
-    d.rectangle([226, 380, 236, 492], fill=(150, 155, 162, 255))
-    # power button on top
-    d.ellipse([300, 366, 332, 384], fill=(178, 182, 188, 255))
-    d.ellipse([306, 370, 326, 380], fill=(196, 40, 32, 255))
-    # solar panel on top of the body
-    panel = [380, 352, 700, 380]
-    d.rectangle(panel, fill=(24, 38, 66, 255))
-    for cx in range(380, 700, 40):
-        d.line([cx, 352, cx, 380], fill=(120, 150, 200, 255), width=2)
-    d.line([380, 366, 700, 366], fill=(120, 150, 200, 255), width=2)
-    d.rectangle(panel, outline=(200, 210, 225, 255), width=2)
-    # mounting brackets joining the panel to the body
-    d.rectangle([420, 380, 436, 392], fill=(60, 64, 70, 255))
-    d.rectangle([644, 380, 660, 392], fill=(60, 64, 70, 255))
-    # brand on the body
-    d.text((420, 424), "SOLARFLASH", font=F_BODY, fill=(235, 236, 238, 255))
-    d.text((640, 428), "SF-1", font=F_BODY, fill=(170, 174, 180, 255))
-    # bezel: tapered silver head
-    d.polygon([(760, 372), (838, 392), (838, 480), (760, 500)],
-              fill=(196, 200, 205, 255))
-    d.polygon([(760, 372), (838, 392), (838, 410), (760, 392)],
-              fill=(225, 228, 232, 255))
-    d.polygon([(760, 480), (838, 462), (838, 480), (760, 500)],
-              fill=(150, 154, 160, 255))
-    # lens ring + glass
-    d.ellipse([822, 396, 862, 476], fill=(140, 144, 150, 255))
-    d.ellipse([826, 400, 858, 472], fill=(255, 246, 210, 255))
-    d.ellipse([832, 408, 852, 464], fill=(255, 255, 240, 255))
-
-
-def draw_sunglasses(img):
-    """Exactly one accessory: dark sunglasses, slightly angled."""
-    d = ImageDraw.Draw(img, "RGBA")
-    # temples, angled gently outwards
-    d.line([310, 652, 272, 640], fill=(70, 70, 74, 255), width=8)
-    d.line([478, 652, 516, 640], fill=(70, 70, 74, 255), width=8)
-    # lenses, larger and framed so they read as sunglasses
-    d.rounded_rectangle([292, 640, 392, 716], radius=34,
-                        fill=(30, 30, 34, 255),
-                        outline=(120, 122, 126, 255), width=4)
-    d.rounded_rectangle([396, 640, 496, 716], radius=34,
-                        fill=(30, 30, 34, 255),
-                        outline=(120, 122, 126, 255), width=4)
-    # bridge
-    d.line([392, 672, 396, 672], fill=(70, 70, 74, 255), width=8)
-    # glints
-    d.line([306, 654, 344, 654], fill=(205, 210, 215, 255), width=5)
-    d.line([410, 654, 448, 654], fill=(205, 210, 215, 255), width=5)
-
-
-def draw_text(img):
-    d = ImageDraw.Draw(img, "RGBA")
-    cx = W // 2
-    # catalogue header, small and quiet
-    tag = "LUMEN  ·  STUDIO CATALOGUE 2026"
-    bb = d.textbbox((0, 0), tag, font=F_TAG)
-    d.text((cx - (bb[2] - bb[0]) // 2, 92), tag, font=F_TAG,
-           fill=(120, 118, 112, 255))
-    # product name
-    name = "SOLARFLASH SF-1"
-    bb = d.textbbox((0, 0), name, font=F_BOLD)
-    d.text((cx - (bb[2] - bb[0]) // 2, 780), name, font=F_BOLD,
-           fill=(38, 38, 36, 255))
-    # spec lines — product text, never an explanation of the joke
-    specs = [
-        "Solar-powered torch  ·  works only in daylight",
-        "0 lumens after sunset  ·  no batteries, ever",
-    ]
-    y = 856
-    for line in specs:
-        bb = d.textbbox((0, 0), line, font=F_SPEC)
-        d.text((cx - (bb[2] - bb[0]) // 2, y), line, font=F_SPEC,
-               fill=(96, 94, 90, 255))
-        y += 42
-    price = "£49.99"
-    bb = d.textbbox((0, 0), price, font=F_SMALL)
-    d.text((cx - (bb[2] - bb[0]) // 2, 946), price, font=F_SMALL,
-           fill=(38, 38, 36, 255))
-
-
 def main():
     out_dir = os.environ.get("MAKEFUN_OUTPUT_DIR", "/output")
     os.makedirs(out_dir, exist_ok=True)
-    img = backdrop().convert("RGBA")
-    draw_shadow(img)
-    draw_beam(img)
-    draw_torch(img)
-    draw_sunglasses(img)
-    draw_text(img)
-    img.convert("RGB").save(os.path.join(out_dir, "entry.png"))
+
+    # --- studio backdrop: pale grey gradient, slightly darker at the floor.
+    img = vertical_gradient((W, H), (243, 244, 245), (214, 217, 220))
+    overlay = Image.new("RGBA", (W, H), (0, 0, 0, 0))
+    od = ImageDraw.Draw(overlay)
+
+    # --- floor shadow under the torch and under the sunglasses.
+    soft_ellipse(overlay, (150, 560, 830, 610), (60, 64, 70, 90), 18)
+    soft_ellipse(overlay, (600, 712, 900, 742), (60, 64, 70, 80), 14)
+
+    # --- warm beam spilling out of the right edge, from the lens.
+    beam = Image.new("RGBA", (W, H), (0, 0, 0, 0))
+    bd = ImageDraw.Draw(beam)
+    bd.polygon([(812, 452), (1024, 380), (1024, 620), (812, 548)],
+               fill=(255, 196, 90, 150))
+    bd.polygon([(812, 470), (1024, 430), (1024, 570), (812, 530)],
+               fill=(255, 214, 130, 185))
+    beam = beam.filter(ImageFilter.GaussianBlur(10))
+    overlay.alpha_composite(beam)
+    # hot core of the beam right at the lens, plus a soft halo around it
+    soft_ellipse(overlay, (790, 440, 900, 560), (255, 226, 150, 170), 22)
+    soft_ellipse(overlay, (748, 408, 872, 592), (255, 210, 110, 70), 30)
+
+    # --- torch body: gunmetal, horizontal, head on the right.
+    body = Image.new("RGBA", (W, H), (0, 0, 0, 0))
+    bdd = ImageDraw.Draw(body)
+    rounded(bdd, (180, 440, 800, 560), radius=58, fill=(74, 80, 88, 255))
+    rounded(bdd, (180, 440, 800, 500), radius=58, fill=(96, 103, 112, 255))
+    # top highlight strip and bottom shade for a manufactured look
+    rounded(bdd, (200, 448, 780, 466), radius=9, fill=(150, 158, 168, 255))
+    rounded(bdd, (200, 534, 780, 552), radius=9, fill=(52, 57, 64, 255))
+    # grip rings near the tail
+    for x in (232, 258, 284):
+        bdd.rectangle((x, 442, x + 10, 558), fill=(58, 63, 71, 255))
+    # tail cap
+    rounded(bdd, (180, 452, 214, 548), radius=16, fill=(60, 65, 73, 255))
+    overlay.alpha_composite(body)
+
+    # --- solar panel on the back of the body, on a small bracket.
+    panel = Image.new("RGBA", (W, H), (0, 0, 0, 0))
+    pd = ImageDraw.Draw(panel)
+    pd.rectangle((330, 428, 352, 446), fill=(52, 57, 64, 255))  # bracket
+    pd.rectangle((540, 428, 562, 446), fill=(52, 57, 64, 255))  # bracket
+    rounded(pd, (300, 372, 592, 432), radius=10,
+            fill=(24, 42, 84, 255), outline=(150, 158, 168, 255), width=3)
+    for x in range(348, 592, 48):  # panel grid, vertical
+        pd.line([(x, 376), (x, 428)], fill=(120, 140, 190, 255), width=2)
+    for y in (392, 412):  # panel grid, horizontal
+        pd.line([(304, y), (588, y)], fill=(120, 140, 190, 255), width=2)
+    # sun glint on the panel
+    pd.polygon([(320, 376), (380, 376), (340, 428), (304, 428)],
+               fill=(90, 120, 180, 90))
+    overlay.alpha_composite(panel)
+
+    # --- red power button on top of the body.
+    btn = Image.new("RGBA", (W, H), (0, 0, 0, 0))
+    btd = ImageDraw.Draw(btn)
+    btd.ellipse((636, 420, 672, 444), fill=(178, 34, 34, 255),
+                outline=(120, 18, 18, 255), width=2)
+    btd.ellipse((644, 424, 660, 434), fill=(226, 90, 90, 255))
+    overlay.alpha_composite(btn)
+
+    # --- head: silver bezel ring + glowing lens.
+    head = Image.new("RGBA", (W, H), (0, 0, 0, 0))
+    hd = ImageDraw.Draw(head)
+    rounded(hd, (768, 428, 846, 572), radius=24,
+            fill=(196, 200, 206, 255), outline=(140, 146, 154, 255), width=3)
+    hd.ellipse((792, 448, 838, 552), fill=(255, 240, 190, 255),
+               outline=(255, 214, 120, 255), width=4)
+    hd.ellipse((802, 462, 828, 538), fill=(255, 252, 235, 255))
+    overlay.alpha_composite(head)
+
+    # --- the one accessory: sunglasses, resting below the torch.
+    acc = Image.new("RGBA", (W, H), (0, 0, 0, 0))
+    ad = ImageDraw.Draw(acc)
+    rounded(ad, (620, 648, 748, 706), radius=22, fill=(22, 22, 24, 255))
+    rounded(ad, (772, 648, 900, 706), radius=22, fill=(22, 22, 24, 255))
+    ad.line([(748, 668), (772, 668)], fill=(22, 22, 24, 255), width=10)
+    ad.line([(620, 660), (596, 640)], fill=(22, 22, 24, 255), width=8)
+    ad.line([(900, 660), (924, 640)], fill=(22, 22, 24, 255), width=8)
+    # lens glints
+    ad.line([(648, 700), (700, 656)], fill=(120, 130, 145, 255), width=5)
+    ad.line([(800, 700), (852, 656)], fill=(120, 130, 145, 255), width=5)
+    overlay.alpha_composite(acc)
+
+    img = Image.alpha_composite(img.convert("RGBA"), overlay).convert("RGB")
+    d = ImageDraw.Draw(img)
+
+    # --- catalogue typography (DejaVu). Text belongs to the product only.
+    f_head = font("DejaVuSans.ttf", 30)
+    f_name = font("DejaVuSans-Bold.ttf", 64)
+    f_spec = font("DejaVuSans.ttf", 30)
+    f_price = font("DejaVuSans-Bold.ttf", 44)
+
+    d.text((64, 52), "L U M E N   ·   S T U D I O   C A T A L O G U E   2 0 2 6",
+           font=f_head, fill=(90, 94, 100))
+    d.line([(64, 100), (960, 100)], fill=(150, 155, 160), width=2)
+    d.text((64, 812), "SOLARFLASH SF-1", font=f_name, fill=(38, 42, 48))
+    d.text((64, 890), "Solar-powered torch · works only in daylight",
+           font=f_spec, fill=(80, 84, 90))
+    d.text((64, 928), "0 lumens after sunset · no batteries, ever",
+           font=f_spec, fill=(80, 84, 90))
+    d.text((800, 812), "£49.99", font=f_price, fill=(38, 42, 48))
+
+    img.save(os.path.join(out_dir, "entry.png"))
 
 
 if __name__ == "__main__":
